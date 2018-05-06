@@ -88,6 +88,10 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->tickets = 1;
+  p->stride = 0;
+  p->pass = 0;
+  p->usageCount = 0;
 
   release(&ptable.lock);
 
@@ -259,6 +263,10 @@ exit(void)
       if(p->state == ZOMBIE)
         wakeup1(initproc);
     }
+ if(p->name[4]=='1'||p->name[4]=='2'||p->name[4]=='3')
+{
+cprintf("Process %s executed %d\t",p->name,p->usageCount);
+}
   }
 
   // Jump into the scheduler, never to return.
@@ -332,13 +340,40 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+
+	struct proc *minProc;
+	int min = 10000;
+
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
 
+	if(p->state == RUNNABLE && p->pass <min)
+	{
+		minProc = p;
+		min = minProc->pass;
+	}
+     }
+
+	if(min!=10000)
+	{
+	
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
+
+		p=minProc;
+		p->stride = 10000/p->tickets;
+		p->pass += p->stride;
+		if(p->pass >= 10000)
+		{
+			struct proc* aProc;
+			for(aProc = ptable.proc; aProc<&ptable.proc[NPROC];++aProc)
+			{
+				aProc->pass = 0;
+			}
+		}
+	p->usageCount+=1;
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
@@ -348,7 +383,7 @@ scheduler(void)
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
-      c->proc = 0;
+      c->proc = 0;	
     }
     release(&ptable.lock);
 
@@ -531,4 +566,46 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+void info(int choice)
+{
+struct proc* p;
+int processes_count=0;
+switch(choice)
+{
+case 1: 
+for(p=ptable.proc; p<&ptable.proc[NPROC];p++)
+{
+processes_count++;
+}
+cprintf("\nCount of the processes in the system: %d\n",processes_count);
+break;
+case 2:
+cprintf("\nCount of the total number of system calls that a process has done so far: %d\n", count);
+break;
+case 3:
+p=myproc();
+cprintf("\nNumber of memory pages the current process is using: %d\n",p->sz/4096);
+break;
+default: cprintf("\n Please enter a valid choice\n");
+}
+}
+
+int stride(int tickets)
+{
+int i;
+struct proc *p;
+acquire(&ptable.lock);
+for(i=0;i<NPROC;i++)
+{
+p=myproc();
+if(p->state == UNUSED)
+return -1;
+p->tickets = tickets;
+release(&ptable.lock);
+return 0;
+}
+release(&ptable.lock);
+return -1;
 }
